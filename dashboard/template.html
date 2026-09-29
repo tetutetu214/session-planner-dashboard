@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>re:Invent 2026 セッション</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #111214;
+    --surface: #18191c;
+    --surface-2: #202226;
+    --line: #2b2d32;
+    --text: #e6e7ea;
+    --text-2: #a3a6ad;
+    --text-3: #71757d;
+    --accent: #6ea8fe;
+    --accent-soft: rgba(110, 168, 254, 0.14);
+    --star: #f2c14e;
+    --sans: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", "Menlo", monospace;
+    /* 強めの spring（行き過ぎて戻る）。操作への応答だけに使う */
+    --spring: linear(0, 0.22 7%, 0.74 17%, 1.06 28%, 1.12 35%, 1.06 45%, 0.99 58%, 1.01 72%, 1);
+    --spring-dur: 380ms;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; color: inherit; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-areas: "top top" "list panel";
+    gap: 16px;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+  .top { grid-area: top; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  .list { grid-area: list; min-width: 0; }
+  .panel { grid-area: panel; align-self: start; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
+
+  .search {
+    flex: 1 1 320px; min-width: 0;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 12px; outline: none;
+  }
+  .search:focus { border-color: var(--accent); }
+  .count { color: var(--text-2); white-space: nowrap; }
+  .count b { color: var(--text); font-weight: 600; }
+  .ctrl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .toggle, .seg button, .linkbtn {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 10px; cursor: pointer; color: var(--text-2);
+  }
+  .toggle[aria-pressed="true"], .seg button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
+  .seg { display: inline-flex; }
+  .seg button { border-radius: 0; }
+  .seg button:first-child { border-radius: 8px 0 0 8px; }
+  .seg button:last-child { border-radius: 0 8px 8px 0; border-left: none; }
+
+  /* 一覧 */
+  .card { border-bottom: 1px solid var(--line); }
+  .row { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 4px; padding: 10px 4px; }
+  .star {
+    width: 28px; height: 28px; border: none; background: none; cursor: pointer;
+    color: var(--text-3); font-size: 18px; line-height: 28px; padding: 0; border-radius: 6px;
+  }
+  .star[aria-pressed="true"] { color: var(--star); }
+  .star.pop { animation: pop var(--spring-dur) var(--spring); }
+  @keyframes pop { from { transform: scale(0.6); } to { transform: scale(1); } }
+  .head { cursor: pointer; min-width: 0; border: none; background: none; text-align: left; padding: 0; }
+  .title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .meta { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; color: var(--text-2); margin-top: 4px; }
+  .meta .code { color: var(--text); }
+  .detail { padding: 0 8px 14px 40px; color: var(--text-2); font-size: 13px; transform-origin: top; }
+  .detail.enter { animation: open var(--spring-dur) var(--spring); }
+  @keyframes open { from { opacity: 0; transform: translateY(-6px) scaleY(0.96); } to { opacity: 1; transform: none; } }
+  .detail p { margin: 0 0 10px; color: var(--text); line-height: 1.65; }
+  .detail dl { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+  .detail dt { color: var(--text-3); }
+  .detail dd { margin: 0; }
+  .empty { color: var(--text-3); padding: 40px 0; text-align: center; }
+  .sentinel { height: 1px; }
+
+  /* 絞り込みパネル */
+  .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .panel-title { font-weight: 600; }
+  .linkbtn { padding: 4px 8px; font-size: 12px; }
+  .group { border-top: 1px solid var(--line); }
+  .ghead { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 2px; border: none; background: none; cursor: pointer; text-align: left; }
+  .ghead .chev { color: var(--text-3); transition: transform var(--spring-dur) var(--spring); }
+  .group.open .ghead .chev { transform: rotate(90deg); }
+  .ghead .gname { flex: 1; font-weight: 600; }
+  .ghead .gsel { color: var(--accent); font-size: 12px; }
+  .gbody { display: none; padding: 0 0 10px; }
+  .group.open .gbody { display: block; }
+  .gbody.enter { animation: open var(--spring-dur) var(--spring); }
+  .gtools { display: flex; gap: 6px; margin-bottom: 6px; }
+  .gsearch { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; outline: none; font-size: 12px; }
+  .gsearch:focus { border-color: var(--accent); }
+  .opts { max-height: 260px; overflow: auto; }
+  .opt { display: flex; align-items: center; gap: 8px; padding: 3px 2px; cursor: pointer; border-radius: 4px; font-size: 13px; }
+  .opt input { accent-color: var(--accent); margin: 0; flex: none; }
+  .opt .olabel { flex: 1; min-width: 0; }
+  .opt .ocount { color: var(--text-3); font-size: 12px; }
+  .opt.zero { color: var(--text-3); }
+  .opt input:checked { animation: pop var(--spring-dur) var(--spring); }
+  .panel-toggle { display: none; }
+
+  /* 画面切り替え（一覧 / 日程）。日程表示中は一覧専用の操作を隠す */
+  .views button { min-height: 44px; padding: 7px 14px; }
+  .schedule { display: none; grid-column: 1 / -1; min-width: 0; }
+  body.is-schedule .search, body.is-schedule .count, body.is-schedule .ctrl,
+  body.is-schedule .list, body.is-schedule .panel, body.is-schedule .dock { display: none; }
+  body.is-schedule .schedule { display: block; }
+
+  /* 一覧カード内の「☆との重複・移動」表示 */
+  .clash { font-size: 12px; color: var(--star); margin-top: 3px; }
+
+  /* ☆を付け外しした直後に出る、その日の☆件数と重複数 */
+  .dock {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 16px;
+    background: var(--surface); border-top: 1px solid var(--line); font-size: 13px;
+  }
+  .dock.enter { animation: rise var(--spring-dur) var(--spring); }
+  .dock .dmsg { flex: 1; min-width: 0; }
+  .dock a { color: var(--accent); min-height: 44px; display: inline-flex; align-items: center; padding: 0 8px; white-space: nowrap; }
+  .dock .close { width: 44px; height: 44px; border: none; background: none; cursor: pointer; color: var(--text-2); font-size: 18px; padding: 0; }
+  body.has-dock .layout { padding-bottom: 72px; }
+  @keyframes rise { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* 日程: 日付タブと時間割 */
+  .days { display: flex; gap: 3px; margin-bottom: 8px; }
+  .days button {
+    flex: 1 1 0; min-width: 0; min-height: 44px; padding: 4px 0; white-space: nowrap;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    cursor: pointer; color: var(--text-2); line-height: 1.25; font-size: 12px; letter-spacing: -0.02em;
+  }
+  .days button .dw { display: block; font-size: 11px; color: var(--text-3); }
+  .days button.nofav { color: var(--text-3); }
+  .days button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
+  .tz { font-size: 12px; color: var(--text-3); margin: 0 0 12px; }
+  .tt-wrap.enter { animation: open var(--spring-dur) var(--spring); transform-origin: top; }
+  .tt { position: relative; margin: 8px 0 16px 40px; }
+  .tt .hour { position: absolute; left: -40px; right: 0; border-top: 1px solid var(--line); }
+  .tt .hour span { position: absolute; top: -8px; left: 0; width: 34px; font-size: 11px; color: var(--text-3); background: var(--bg); }
+  .blk {
+    position: absolute; overflow: hidden; text-align: left; cursor: pointer;
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 6px; font-size: 12px; line-height: 1.35; color: var(--text-2);
+  }
+  .blk.mv-before { padding-bottom: 14px; }
+  .blk.mv-after { padding-top: 14px; }
+  .blk .bt { color: var(--text); font-weight: 600; font-size: 13px; }
+  .blk .bm { display: flex; flex-wrap: wrap; gap: 0 8px; }
+  .blk .bm .code { color: var(--text); }
+  .blk .ovl { color: var(--star); }
+  .mv {
+    position: absolute; left: 0; right: 0; height: 20px; z-index: 2; pointer-events: none;
+    display: flex; align-items: center; justify-content: center; padding: 0 4px;
+    font-size: 11px; color: var(--star); background: var(--bg); border: 1px dashed var(--line); border-radius: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* 全日ビュー（週間）: 目盛り列は細く、5 日を等幅で並べる */
+  .wk { display: flex; --lane: 56px; }
+  .wk-gut { flex: none; width: 22px; padding-top: 52px; }
+  .wk-gut-body { position: relative; margin-bottom: 16px; }
+  .wk-gut-body span { position: absolute; left: 0; top: 0; margin-top: -8px; font-size: 10px; color: var(--text-3); }
+  .wk-scroll { flex: 1; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; }
+  .wk-head, .wk-body { display: grid; gap: 0 2px; width: max-content; min-width: 100%; }
+  .wk-head { height: 44px; }
+  .wk-head button {
+    min-height: 44px; padding: 2px 0; border: none; background: none; cursor: pointer;
+    color: var(--text-2); font-size: 12px; line-height: 1.25; white-space: nowrap;
+  }
+  .wk-head .dw { display: block; font-size: 11px; color: var(--text-3); }
+  .wk-body { position: relative; margin: 8px 0 16px; }
+  .wk-body .hour { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line); }
+  .wk-col { position: relative; min-width: 0; }
+  .wblk {
+    position: absolute; overflow: hidden; cursor: pointer; text-align: left; padding: 2px 3px;
+    display: flex; flex-direction: column; font-size: 10px; line-height: 1.3; white-space: nowrap;
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; color: var(--text);
+  }
+  .wblk .wt { color: var(--text-2); }
+  .wblk.is-ovl { border-color: var(--star); }
+  /* 移動の印は狭い（重なりで分割された）ブロックでも見えるよう右下に固定する */
+  .wblk .wm { position: absolute; right: 2px; bottom: 1px; color: var(--star); background: var(--surface-2); }
+  .wk-tbd { font-size: 13px; color: var(--text-2); display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; }
+  .wk-tbd button { min-height: 44px; padding: 0 6px; border: none; background: none; cursor: pointer; color: var(--text); text-decoration: underline dotted; text-underline-offset: 3px; }
+  .tbd .blk { position: static; display: block; width: 100%; min-height: 44px; margin-bottom: 6px; }
+
+  /* 日程の詳細（下から出るシート） */
+  .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 10; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 11; max-height: 70vh; overflow: auto;
+    background: var(--surface); border-top: 1px solid var(--line); border-radius: 12px 12px 0 0;
+    max-width: 720px; margin: 0 auto; padding: 8px 8px 16px;
+  }
+  .sheet.enter { animation: rise var(--spring-dur) var(--spring); }
+  .sheet .shead { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 4px; align-items: start; }
+  .sheet .star, .sheet .close { width: 44px; height: 44px; line-height: 44px; font-size: 20px; }
+  .sheet .close { border: none; background: none; cursor: pointer; color: var(--text-2); border-radius: 6px; padding: 0; }
+  .sheet .stitle { padding-top: 10px; min-width: 0; }
+  .sheet .detail { padding: 8px 4px 0; }
+
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "panel" "list"; }
+    .panel { position: static; max-height: none; }
+    .panel-toggle { display: inline-block; }
+    .panel.collapsed .groups, .panel.collapsed .panel-head .linkbtn.clear-all { display: none; }
+    .detail { padding-left: 8px; }
+    .detail dl { grid-template-columns: 64px minmax(0, 1fr); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <header class="top">
+    <div class="seg views" role="group" aria-label="画面">
+      <button type="button" data-view="list" aria-pressed="true">一覧</button>
+      <button type="button" data-view="schedule" aria-pressed="false">日程</button>
+    </div>
+    <input id="q" class="search" type="search" placeholder="キーワード（タイトル・概要・コード・登壇者）" autocomplete="off">
+    <span class="count"><b id="hits" class="mono">0</b> 件</span>
+    <div class="ctrl">
+      <button id="starOnly" class="toggle" type="button" aria-pressed="false">☆のみ</button>
+      <div class="seg" role="group" aria-label="並び順">
+        <button type="button" data-sort="time" aria-pressed="true">日時順</button>
+        <button type="button" data-sort="code" aria-pressed="false">コード順</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="list" id="list"></main>
+
+  <aside class="panel collapsed" id="panel">
+    <div class="panel-head">
+      <span class="panel-title">絞り込み</span>
+      <span>
+        <button type="button" class="linkbtn clear-all" id="clearAll">すべてクリア</button>
+        <button type="button" class="linkbtn panel-toggle" id="panelToggle" aria-expanded="false">開く</button>
+      </span>
+    </div>
+    <div class="groups" id="groups"></div>
+  </aside>
+
+  <section class="schedule" id="schedule" aria-label="日程">
+    <div class="days" id="days" role="group" aria-label="日付"></div>
+    <p class="tz">時刻はラスベガス現地時間のまま表示しています（日本時間に変換していません）</p>
+    <div id="tt"></div>
+  </section>
+</div>
+<div class="dock" id="dock" hidden></div>
+<div class="scrim" id="scrim" hidden></div>
+<div class="sheet" id="sheet" role="dialog" aria-label="セッションの詳細" hidden></div>
+
+<script id="data" type="application/json">/*__DATA__*/</script>
+<script>
+(function () {
+  "use strict";
+
+  // ---- データ読み込み ----
+  var DATA = JSON.parse(document.getElementById("data").textContent);
+  var SESSIONS = DATA.sessions || [];
+  function speakerNames(s) { return arr(s.speakers).map(function (p) { return p && p.name; }).filter(Boolean); }
+  var WEEK = ["日", "月", "火", "水", "木", "金", "土"];
+  var PAGE = 150; // 一度に描画する件数
+
+  function arr(v) { return v == null || v === "" ? [] : (Array.isArray(v) ? v : [v]); }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fmtDate(d) {
+    if (!d) return "日時未定";
+    var p = d.split("-");
+    if (p.length !== 3) return d;
+    var w = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+    return (+p[1]) + "/" + (+p[2]) + "(" + WEEK[w] + ")";
+  }
+  function dateOf(s) { return (s.sessionTime && s.sessionTime.date) || ""; }
+
+  // ---- 時刻の重なりと会場移動（一覧と日程で共有する判定） ----
+  var MOVE_LIMIT = 30; // 会場が違うとき、前の終了から次の開始までがこれ未満（分）なら移動を注意する
+  // sessionTime から当日の開始・終了（0 時からの分）を返す。日時未定なら null
+  function spanOf(s) {
+    var t = s.sessionTime || {};
+    var m = /^(\d{1,2}):(\d{2})$/.exec(t.time || "");
+    if (!t.date || !m) return null;
+    var start = (+m[1]) * 60 + (+m[2]);
+    return { date: t.date, start: start, end: start + (Number(t.length) || 0) };
+  }
+  function hhmm(min) { var h = Math.floor(min / 60), m = min % 60; return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m; }
+  function rangeText(sp) { return sp.end > sp.start ? hhmm(sp.start) + "–" + hhmm(sp.end) : hhmm(sp.start); }
+  // 同じ日で時間が重なるか。長さ 0 分のものも開始時刻の一点として重なりに数える
+  function overlaps(a, b) {
+    var x = spanOf(a), y = spanOf(b);
+    if (!x || !y || x.date !== y.date) return false;
+    return x.start < Math.max(y.end, y.start + 1) && y.start < Math.max(x.end, x.start + 1);
+  }
+  // 時刻順で a → b と続くとき、会場が違い間隔が MOVE_LIMIT 分未満なら { gap, from, to } を返す
+  // 重なっている（間隔が負）場合は重なりとして扱うので、ここでは返さない
+  function moveBetween(a, b) {
+    var x = spanOf(a), y = spanOf(b);
+    if (!x || !y || x.date !== y.date || !a.venueName || !b.venueName || a.venueName === b.venueName) return null;
+    var gap = y.start - x.end;
+    return gap >= 0 && gap < MOVE_LIMIT ? { gap: gap, from: a.venueName, to: b.venueName } : null;
+  }
+  // 時刻順に並べる（開始 → 終了 → コード）
+  function byStart(a, b) {
+    var x = spanOf(a), y = spanOf(b);
+    return x.start - y.start || x.end - y.end || (a._code < b._code ? -1 : a._code > b._code ? 1 : 0);
+  }
+  function favList() { return Array.from(favs).map(function (id) { return BY_ID[id]; }).filter(Boolean); }
+  // その日（"" は日時未定）の☆の件数と、重なっている組の数
+  function daySummary(date) {
+    var list = favList().filter(function (s) { return dateOf(s) === date; });
+    var pairs = 0;
+    for (var i = 0; i < list.length; i++) for (var j = i + 1; j < list.length; j++) if (overlaps(list[i], list[j])) pairs++;
+    return { count: list.length, overlaps: pairs };
+  }
+
+  // ---- お気に入り（localStorage が使えなくても動く） ----
+  var FAV_KEY = "reinvent2026.favorites";
+  var favs = new Set();
+  try {
+    var raw = localStorage.getItem(FAV_KEY);
+    if (raw) JSON.parse(raw).forEach(function (id) { favs.add(id); });
+  } catch (e) { /* 保存領域が使えない環境では記憶しないだけ */ }
+  function saveLocal() {
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(Array.from(favs))); } catch (e) { /* 同上 */ }
+  }
+  // ☆を付け外ししたときは、この端末だけに保存する
+  function saveFavs() {
+    saveLocal();
+  }
+
+  // ---- 絞り込み項目の定義 ----
+  var GROUPS = [
+    { key: "topics", name: "トピック" },
+    { key: "level", name: "レベル", sortByValue: true },
+    { key: "type", name: "種別" },
+    { key: "date", name: "日付", sortByValue: true, get: function (s) { return [dateOf(s)]; }, label: fmtDate },
+    { key: "features", name: "形式" },
+    { key: "areasOfInterest", name: "関心領域" },
+    { key: "industries", name: "業界" },
+    { key: "roles", name: "職種" },
+    { key: "venue", name: "会場", get: function (s) { return arr(s.venueName); } },
+    { key: "services", name: "サービス", searchable: true, label: function (v) { return v; } },
+    // 登壇者は 2,000 人超なので、該当 0 の人を隠し、検索していないときは上位 100 人だけ出す
+    { key: "speakers", name: "登壇者", searchable: true, placeholder: "名前で探す", hideZero: true, limit: 100,
+      get: speakerNames, label: function (v) { return v; } }
+  ];
+  GROUPS.forEach(function (g) {
+    if (!g.get) g.get = function (s) { return arr(s[g.key]); };
+    if (!g.label) g.label = function (v) { return String(v); };
+    g.selected = new Set();
+    // よく使う項目は最初から開いておく
+    g.open = ["topics", "level", "type", "date"].indexOf(g.key) >= 0;
+    g.query = "";
+    // 選択肢の一覧（全件ベースで固定）
+    var all = new Set();
+    SESSIONS.forEach(function (s) { g.get(s).forEach(function (v) { all.add(v); }); });
+    g.values = Array.from(all);
+    if (g.sortByValue) {
+      // 日付は未定を末尾に
+      g.values.sort(function (a, b) { return (a === "") - (b === "") || (a < b ? -1 : a > b ? 1 : 0); });
+    }
+  });
+
+  // ---- 検索用の前処理 ----
+  var BY_ID = {};
+  SESSIONS.forEach(function (s, i) {
+    s._i = i;
+    BY_ID[s.sessionId] = s;
+    s._text = [s.title, s.abstract, s.abbreviation, speakerNames(s).join(" ")].join("\n").toLowerCase();
+    s._sortTime = (dateOf(s) || "9999-99-99") + " " + ((s.sessionTime && s.sessionTime.time) || "99:99");
+    s._code = s.abbreviation || "~";
+  });
+
+  var state = { q: "", starOnly: false, sort: "time", shown: PAGE, openIds: new Set() };
+
+  function matchBase(s) {
+    if (state.starOnly && !favs.has(s.sessionId)) return false;
+    if (state.q && s._text.indexOf(state.q) === -1) return false;
+    return true;
+  }
+  function matchGroup(g, s) {
+    if (g.selected.size === 0) return true;
+    var vs = g.get(s);
+    for (var i = 0; i < vs.length; i++) if (g.selected.has(vs[i])) return true; // 同じ項目内は OR
+    return false;
+  }
+
+  // ---- 絞り込みパネル描画 ----
+  var groupsEl = document.getElementById("groups");
+  function renderPanel(base) {
+    // 各項目について「その項目以外の条件」で数える
+    var html = "";
+    GROUPS.forEach(function (g, gi) {
+      var counts = new Map();
+      base.forEach(function (s) {
+        for (var j = 0; j < GROUPS.length; j++) {
+          if (j !== gi && !matchGroup(GROUPS[j], s)) return;
+        }
+        var seen = new Set(g.get(s));
+        seen.forEach(function (v) { counts.set(v, (counts.get(v) || 0) + 1); });
+      });
+      var values = g.values.slice();
+      if (!g.sortByValue) {
+        values.sort(function (a, b) {
+          return (g.rank ? g.rank(a) - g.rank(b) : 0) ||
+            (counts.get(b) || 0) - (counts.get(a) || 0) || g.label(a).localeCompare(g.label(b), "ja");
+        });
+      }
+      var q = g.query.toLowerCase();
+      var shown = values.filter(function (v) {
+        if (g.hideZero && !counts.get(v) && !g.selected.has(v)) return false;
+        return !q || g.label(v).toLowerCase().indexOf(q) !== -1 || String(v).toLowerCase().indexOf(q) !== -1;
+      });
+      if (g.limit && !q) shown = shown.slice(0, g.limit);
+      var opts = shown.map(function (v) {
+        var n = counts.get(v) || 0;
+        var checked = g.selected.has(v);
+        return '<label class="opt' + (n === 0 && !checked ? " zero" : "") + '">' +
+          '<input type="checkbox" data-g="' + gi + '" data-v="' + esc(v) + '"' + (checked ? " checked" : "") + ">" +
+          '<span class="olabel">' + esc(g.label(v)) + "</span>" +
+          '<span class="ocount mono">' + n + "</span></label>";
+      }).join("");
+      html += '<section class="group' + (g.open ? " open" : "") + '" data-gi="' + gi + '">' +
+        '<button type="button" class="ghead" data-toggle="' + gi + '" aria-expanded="' + g.open + '">' +
+        '<span class="chev">▸</span><span class="gname">' + esc(g.name) + "</span>" +
+        (g.selected.size ? '<span class="gsel mono">' + g.selected.size + "</span>" : "") + "</button>" +
+        '<div class="gbody">' +
+        '<div class="gtools">' +
+        (g.searchable ? '<input class="gsearch" type="search" data-gs="' + gi + '" placeholder="' + (g.placeholder || "サービス名で探す") + '" value="' + esc(g.query) + '">' : "") +
+        (g.selected.size ? '<button type="button" class="linkbtn" data-clear="' + gi + '">選択クリア</button>' : "") +
+        "</div>" +
+        '<div class="opts">' + (opts || '<div class="opt zero">該当なし</div>') + "</div></div></section>";
+    });
+    // サービス検索欄の入力中はフォーカスとキャレットを保つ
+    var active = document.activeElement;
+    var gsIndex = active && active.getAttribute && active.getAttribute("data-gs");
+    var caret = gsIndex != null ? active.selectionStart : null;
+    var scrolls = {};
+    groupsEl.querySelectorAll(".opts").forEach(function (el) {
+      scrolls[el.parentNode.parentNode.getAttribute("data-gi")] = el.scrollTop;
+    });
+    groupsEl.innerHTML = html;
+    groupsEl.querySelectorAll(".opts").forEach(function (el) {
+      var gi = el.parentNode.parentNode.getAttribute("data-gi");
+      if (scrolls[gi]) el.scrollTop = scrolls[gi];
+    });
+    if (gsIndex != null) {
+      var el = groupsEl.querySelector('[data-gs="' + gsIndex + '"]');
+      if (el) { el.focus(); try { el.setSelectionRange(caret, caret); } catch (e) { /* 無視 */ } }
+    }
+  }
+
+  // ---- 一覧描画 ----
+  var listEl = document.getElementById("list");
+  var hitsEl = document.getElementById("hits");
+  var current = [];
+
+  function metaHtml(s) {
+    var t = s.sessionTime || {};
+    var when = s.isAllDaySession ? fmtDate(t.date) + " 終日" : (t.date ? fmtDate(t.date) + " " + (t.time || "") : "日時未定");
+    var parts = [
+      '<span class="code mono">' + esc(s.abbreviation || "—") + "</span>",
+      s.type ? "<span>" + esc(s.type) + "</span>" : "",
+      s.level ? "<span>" + esc(s.level) + "</span>" : "",
+      '<span class="mono">' + esc(when) + "</span>",
+      t.length ? '<span class="mono">' + esc(t.length) + "分</span>" : "",
+      s.venueName ? "<span>" + esc(s.venueName) + "</span>" : ""
+    ];
+    return parts.join("");
+  }
+  function detailHtml(s) {
+    var rows = [];
+    function row(name, v) { if (v) rows.push("<dt>" + name + "</dt><dd>" + v + "</dd>"); }
+    row("トピック", arr(s.topics).map(esc).join("、"));
+    row("サービス", arr(s.services).map(esc).join("、"));
+    row("登壇者", speakerNames(s).map(esc).join("<br>"));
+    row("部屋", esc(s.room || ""));
+    var body = s.abstract ? '<p lang="en">' + esc(s.abstract) + "</p>" : "";
+    return '<div class="detail enter">' + body +
+      "<dl>" + rows.join("") + "</dl></div>";
+  }
+  // 一覧カード用: このセッションと、☆を付けた別セッションとの重なり・直前直後の会場移動を 1 行にする
+  function clashText(s) {
+    var me = spanOf(s);
+    if (!me || !favs.size) return "";
+    var hits = [], prev = null, next = null;
+    favList().forEach(function (f) {
+      if (f.sessionId === s.sessionId) return;
+      var sp = spanOf(f);
+      if (!sp || sp.date !== me.date) return;
+      if (overlaps(s, f)) { hits.push(f); return; }
+      if (sp.end <= me.start && (!prev || sp.end > spanOf(prev).end)) prev = f;
+      if (sp.start >= me.end && (!next || sp.start < spanOf(next).start)) next = f;
+    });
+    var parts = hits.sort(byStart).map(function (f) { return "☆と重複: " + (f.abbreviation || "—") + " " + rangeText(spanOf(f)); });
+    [[prev, s, prev], [s, next, next]].forEach(function (p) {
+      var mv = p[0] && p[1] && moveBetween(p[0], p[1]);
+      if (mv) parts.push("移動 " + mv.gap + " 分（" + (p[2].abbreviation || "—") + "）");
+    });
+    return parts.join("・");
+  }
+  function refreshClashes() {
+    listEl.querySelectorAll(".card").forEach(function (card) {
+      var s = BY_ID[card.getAttribute("data-id")];
+      var el = card.querySelector(".clash");
+      if (!s || !el) return;
+      var t = clashText(s);
+      el.textContent = t;
+      el.hidden = !t;
+    });
+  }
+  function cardHtml(s) {
+    var clash = clashText(s);
+    var fav = favs.has(s.sessionId);
+    var open = state.openIds.has(s.sessionId);
+    return '<article class="card" data-id="' + esc(s.sessionId) + '"><div class="row">' +
+      '<button type="button" class="star" aria-label="お気に入り" aria-pressed="' + fav + '">' + (fav ? "★" : "☆") + "</button>" +
+      '<button type="button" class="head" aria-expanded="' + open + '">' +
+      '<div class="title" lang="en">' + esc(s.title) + "</div>" +
+      '<div class="meta">' + metaHtml(s) + "</div>" +
+      '<div class="clash"' + (clash ? "" : " hidden") + ">" + esc(clash) + "</div></button></div>" +
+      (open ? detailHtml(s).replace(" enter", "") : "") + "</article>";
+  }
+  function renderList() {
+    hitsEl.textContent = current.length;
+    if (!current.length) { listEl.innerHTML = '<div class="empty">該当するセッションはありません</div>'; return; }
+    listEl.innerHTML = current.slice(0, state.shown).map(cardHtml).join("") +
+      (current.length > state.shown ? '<div class="sentinel" id="sentinel"></div>' : "");
+    observeSentinel();
+  }
+  function appendMore() {
+    var from = state.shown;
+    state.shown += PAGE;
+    var sen = document.getElementById("sentinel");
+    if (sen) sen.remove();
+    listEl.insertAdjacentHTML("beforeend", current.slice(from, state.shown).map(cardHtml).join("") +
+      (current.length > state.shown ? '<div class="sentinel" id="sentinel"></div>' : ""));
+    observeSentinel();
+  }
+  var io = "IntersectionObserver" in window ? new IntersectionObserver(function (entries) {
+    if (entries.some(function (e) { return e.isIntersecting; })) appendMore();
+  }, { rootMargin: "800px" }) : null;
+  function observeSentinel() {
+    var sen = document.getElementById("sentinel");
+    if (!sen) return;
+    if (io) { io.disconnect(); io.observe(sen); } else { state.shown = current.length; renderList(); }
+  }
+
+  // ---- 全体更新 ----
+  function update(resetScroll) {
+    var base = SESSIONS.filter(matchBase);
+    current = base.filter(function (s) { return GROUPS.every(function (g) { return matchGroup(g, s); }); });
+    current.sort(state.sort === "code"
+      ? function (a, b) { return a._code < b._code ? -1 : a._code > b._code ? 1 : a._i - b._i; }
+      : function (a, b) { return a._sortTime < b._sortTime ? -1 : a._sortTime > b._sortTime ? 1 : a._code < b._code ? -1 : a._code > b._code ? 1 : 0; });
+    state.shown = PAGE;
+    renderList();
+    renderPanel(base);
+    if (resetScroll && listEl.getBoundingClientRect().top < 0) listEl.scrollIntoView({ block: "start" });
+  }
+
+  // ---- イベント ----
+  var timer = null;
+  document.getElementById("q").addEventListener("input", function (e) {
+    clearTimeout(timer);
+    var v = e.target.value;
+    timer = setTimeout(function () { state.q = v.trim().toLowerCase(); update(true); }, 150);
+  });
+  document.getElementById("starOnly").addEventListener("click", function (e) {
+    state.starOnly = !state.starOnly;
+    e.currentTarget.setAttribute("aria-pressed", state.starOnly);
+    update(true);
+  });
+  document.querySelectorAll("[data-sort]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      state.sort = b.getAttribute("data-sort");
+      document.querySelectorAll("[data-sort]").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
+      update(true);
+    });
+  });
+  document.getElementById("clearAll").addEventListener("click", function () {
+    GROUPS.forEach(function (g) { g.selected.clear(); });
+    update(true);
+  });
+  var panelEl = document.getElementById("panel");
+  document.getElementById("panelToggle").addEventListener("click", function (e) {
+    var collapsed = panelEl.classList.toggle("collapsed");
+    e.currentTarget.setAttribute("aria-expanded", !collapsed);
+    e.currentTarget.textContent = collapsed ? "開く" : "閉じる";
+  });
+
+  groupsEl.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-toggle],[data-clear]");
+    if (!t) return;
+    if (t.hasAttribute("data-toggle")) {
+      var g = GROUPS[+t.getAttribute("data-toggle")];
+      g.open = !g.open;
+      var sec = t.parentNode;
+      sec.classList.toggle("open", g.open);
+      t.setAttribute("aria-expanded", g.open);
+      var body = sec.querySelector(".gbody");
+      if (g.open) { body.classList.remove("enter"); void body.offsetWidth; body.classList.add("enter"); }
+    } else {
+      GROUPS[+t.getAttribute("data-clear")].selected.clear();
+      update(true);
+    }
+  });
+  groupsEl.addEventListener("change", function (e) {
+    var t = e.target;
+    if (!t.hasAttribute("data-g")) return;
+    var g = GROUPS[+t.getAttribute("data-g")];
+    var v = t.getAttribute("data-v");
+    if (t.checked) g.selected.add(v); else g.selected.delete(v);
+    update(true);
+  });
+  var gsTimer = null;
+  groupsEl.addEventListener("input", function (e) {
+    var t = e.target;
+    if (!t.hasAttribute("data-gs")) return;
+    clearTimeout(gsTimer);
+    gsTimer = setTimeout(function () {
+      GROUPS[+t.getAttribute("data-gs")].query = t.value.trim();
+      renderPanel(SESSIONS.filter(matchBase));
+    }, 120);
+  });
+
+  listEl.addEventListener("click", function (e) {
+    var card = e.target.closest(".card");
+    if (!card) return;
+    var id = card.getAttribute("data-id");
+    var s = SESSIONS.find(function (x) { return x.sessionId === id; });
+    if (!s) return;
+    var star = e.target.closest(".star");
+    if (star) {
+      if (favs.has(id)) favs.delete(id); else favs.add(id);
+      saveFavs();
+      var on = favs.has(id);
+      star.setAttribute("aria-pressed", on);
+      star.textContent = on ? "★" : "☆";
+      star.classList.remove("pop"); void star.offsetWidth; star.classList.add("pop");
+      // ☆のみ表示中に外した場合も、カードは次の操作まで残す（押した直後に消えないように）
+      refreshClashes();
+      showDock(dateOf(s));
+      return;
+    }
+    var head = e.target.closest(".head");
+    if (!head) return;
+    var det = card.querySelector(".detail");
+    if (det) {
+      det.remove();
+      state.openIds.delete(id);
+      head.setAttribute("aria-expanded", "false");
+    } else {
+      card.insertAdjacentHTML("beforeend", detailHtml(s));
+      state.openIds.add(id);
+      head.setAttribute("aria-expanded", "true");
+    }
+  });
+
+  // ---- ☆の付け外し直後に、その日の☆件数と重複数を画面下に出す ----
+  var dockEl = document.getElementById("dock");
+  var pendingDay = null; // 「日程を見る」で開く日（hash には載せない）
+  function showDock(date) {
+    var sum = daySummary(date);
+    var msg = (date ? fmtDate(date) : "日時未定") + " の☆ " + sum.count + " 件" + (sum.overlaps ? "・重複 " + sum.overlaps : "");
+    var wasHidden = dockEl.hidden;
+    dockEl.innerHTML = '<span class="dmsg">' + esc(msg) + "</span>" +
+      '<a href="#schedule" data-day="' + esc(date) + '">日程を見る</a>' +
+      '<button type="button" class="close" aria-label="閉じる">×</button>';
+    dockEl.hidden = false;
+    document.body.classList.add("has-dock");
+    if (wasHidden) { dockEl.classList.remove("enter"); void dockEl.offsetWidth; dockEl.classList.add("enter"); }
+  }
+  function hideDock() { dockEl.hidden = true; document.body.classList.remove("has-dock"); }
+  dockEl.addEventListener("click", function (e) {
+    var a = e.target.closest("a[data-day]");
+    if (a) { pendingDay = a.getAttribute("data-day"); hideDock(); return; } // 画面の切り替えは hashchange に任せる
+    if (e.target.closest(".close")) hideDock();
+  });
+
+  // ---- 日程ページ: ☆を付けたセッションの時間割 ----
+  var PX = 2.2;   // 1 分あたりの高さ（20 分のブロックがちょうど 44px になる）
+  var MIN_H = 44; // 長さ 0 分でも押せる最小の高さ
+  var ALL = "*"; // 全日（週間の時間割）
+  var DATES = Array.from(new Set(SESSIONS.map(dateOf).filter(Boolean))).sort();
+  var DAYS = [ALL].concat(DATES, [""]); // "" は日時未定
+  var daysEl = document.getElementById("days");
+  var ttEl = document.getElementById("tt");
+  var schedDay = null;
+  function favsOn(date) { return date === ALL ? favList() : favList().filter(function (s) { return dateOf(s) === date; }); }
+  function renderDays() {
+    daysEl.innerHTML = DAYS.map(function (d) {
+      var p = fmtDate(d).split("(");
+      var label = d === ALL ? "全日" : d ? '<span class="mono">' + esc(p[0]) + '</span><span class="dw">(' + esc(p[1]) + "</span>" : '日時<span class="dw">未定</span>';
+      return '<button type="button" data-day="' + esc(d) + '" aria-pressed="' + (d === schedDay) + '"' +
+        (favsOn(d).length ? "" : ' class="nofav"') + ">" + label + "</button>";
+    }).join("");
+  }
+  function blockHtml(s, ovl, extraClass, style) {
+    var sp = spanOf(s);
+    return '<button type="button" class="blk' + (extraClass || "") + '" data-id="' + esc(s.sessionId) + '"' + (style ? ' style="' + style + '"' : "") + ">" +
+      '<div class="bm"><span class="code mono">' + esc(s.abbreviation || "—") + "</span>" +
+      (sp ? '<span class="mono">' + rangeText(sp) + "</span>" : "") + (ovl ? '<span class="ovl">重なり</span>' : "") + "</div>" +
+      '<div class="bt" lang="en">' + esc(s.title) + "</div>" +
+      (s.venueName ? "<div>" + esc(s.venueName) + "</div>" : "") + "</button>";
+  }
+  function renderTimetable(animate) {
+    var list = favsOn(schedDay);
+    var html;
+    if (!list.length) {
+      html = '<div class="empty">' + (schedDay === ALL ? "" : "この日に") + "☆を付けたセッションはありません</div>";
+    } else if (schedDay === ALL) {
+      html = weekHtml(list);
+    } else if (schedDay === "") {
+      list.sort(function (a, b) { return a._code < b._code ? -1 : a._code > b._code ? 1 : 0; });
+      html = '<div class="tbd">' + list.map(function (s) { return blockHtml(s, false); }).join("") + "</div>";
+    } else {
+      html = timetableHtml(list.sort(byStart));
+    }
+    ttEl.innerHTML = '<div class="tt-wrap' + (animate ? " enter" : "") + '">' + html + "</div>";
+    fitWeek();
+  }
+  // 全日ビューの 1 レーン幅を「5 日とも 1 レーンなら横スクロール無しで収まる幅」にする（最小 WK_LANE_MIN）
+  function fitWeek() {
+    var wk = ttEl.querySelector(".wk");
+    if (!wk) return;
+    var w = wk.querySelector(".wk-scroll").clientWidth;
+    wk.style.setProperty("--lane", Math.max(WK_LANE_MIN, Math.floor((w - 4 * 2) / 5)) + "px");
+  }
+  window.addEventListener("resize", fitWeek);
+  // 時刻順に並んだ☆から時間割を組む。重なる群ごとに列を割り当て、群の中だけ横に分ける
+  // 時刻順の☆を、画面上の高さ（1 分あたり px）で見た終了時刻つきの配置情報にする
+  function layoutItems(list, px) {
+    var items = list.map(function (s) {
+      var sp = spanOf(s);
+      return { s: s, sp: sp, vend: Math.max(sp.end, sp.start + MIN_H / px), cls: "" };
+    });
+    assignColumns(items);
+    return items;
+  }
+  // 画面上で重なる群ごとに列番号 col と群の列数 n を割り当てる
+  function assignColumns(items) {
+    var group = [], colEnds = [], groupEnd = -1;
+    function closeGroup() { group.forEach(function (it) { it.n = colEnds.length; }); group = []; colEnds = []; }
+    items.forEach(function (it) {
+      if (it.sp.start >= groupEnd) closeGroup();
+      var c = 0;
+      while (c < colEnds.length && colEnds[c] > it.sp.start) c++;
+      colEnds[c] = it.vend;
+      it.col = c;
+      groupEnd = Math.max(groupEnd, it.vend);
+      group.push(it);
+    });
+    closeGroup();
+  }
+  // 全日ビュー: 5 日を横に並べた週間の時間割。ブロックはコードと開始時刻だけ、移動は印だけ（詳細は日別タブ）
+  var PX_W = 1.4;
+  var WK_LANE_MIN = 56; // 1 レーンの最小幅。コード（例: AIM123-S）が切れず、タップ幅 44px 以上を保つ
+  function weekHtml(list) {
+    var dated = list.filter(function (s) { return spanOf(s); });
+    var undated = list.filter(function (s) { return !spanOf(s); }).sort(function (a, b) { return a._code < b._code ? -1 : 1; });
+    var perDay = DATES.map(function (d) { return layoutItems(dated.filter(function (s) { return dateOf(s) === d; }).sort(byStart), PX_W); });
+    var all = [].concat.apply([], perDay);
+    // 各日の列幅はその日の最大重なり数（レーン数）に比例させる。1 レーンは「5 日とも 1 レーン」のときの 1 列幅
+    var lanes = perDay.map(function (items) { return Math.max.apply(null, [1].concat(items.map(function (it) { return it.n; }))); });
+    // 1 レーンの実幅（--lane）は描画後に fitWeek が見える幅から決める
+    var tmpl = lanes.map(function (n) { return "calc(var(--lane) * " + n + " + " + (n - 1) * 2 + "px)"; }).join(" ");
+    var html = '<div class="wk-head" style="grid-template-columns:' + tmpl + '">' + DATES.map(function (d) {
+      var p = fmtDate(d).split("(");
+      return '<button type="button" data-day="' + esc(d) + '"><span class="mono">' + esc(p[0]) + '</span><span class="dw">(' + esc(p[1]) + "</span></button>";
+    }).join("") + "</div>";
+    var gut = "";
+    if (all.length) {
+      var lo = Math.floor(Math.min.apply(null, all.map(function (it) { return it.sp.start; })) / 60) * 60;
+      var hi = Math.ceil(Math.max.apply(null, all.map(function (it) { return it.vend; })) / 60) * 60;
+      var hours = "";
+      for (var h = lo; h <= hi; h += 60) {
+        hours += '<div class="hour" style="top:' + ((h - lo) * PX_W) + 'px"></div>';
+        gut += '<span class="mono" style="top:' + ((h - lo) * PX_W) + 'px">' + (h / 60) + "</span>";
+      }
+      var cols = perDay.map(function (items) {
+        var mvs = {};
+        for (var i = 0; i + 1 < items.length; i++) {
+          if (moveBetween(items[i].s, items[i + 1].s)) { mvs[items[i].s.sessionId] = 1; mvs[items[i + 1].s.sessionId] = 1; }
+        }
+        return '<div class="wk-col">' + items.map(function (it) {
+          var ovl = items.some(function (o) { return o !== it && overlaps(it.s, o.s); });
+          var style = "top:" + ((it.sp.start - lo) * PX_W).toFixed(1) + "px;height:" + Math.max((it.sp.end - it.sp.start) * PX_W - 2, MIN_H).toFixed(1) + "px;" +
+            "left:" + (it.col * 100 / it.n).toFixed(3) + "%;width:calc(" + (100 / it.n).toFixed(3) + "% - 2px)";
+          return '<button type="button" class="wblk' + (ovl ? " is-ovl" : "") + '" data-id="' + esc(it.s.sessionId) + '" style="' + style + '"' +
+            ' aria-label="' + esc((it.s.abbreviation || "") + " " + hhmm(it.sp.start) + (ovl ? " 重なり" : "") + (mvs[it.s.sessionId] ? " 会場移動あり" : "")) + '">' +
+            '<span class="mono">' + esc(it.s.abbreviation || "—") + "</span>" +
+            '<span class="mono wt">' + hhmm(it.sp.start) + (mvs[it.s.sessionId] ? ' <span class="wm">移</span>' : "") + "</span></button>";
+        }).join("") + "</div>";
+      }).join("");
+      html += '<div class="wk-body" style="grid-template-columns:' + tmpl + ";height:" + ((hi - lo) * PX_W) + 'px">' + hours + cols + "</div>";
+      gut = '<div class="wk-gut-body" style="height:' + ((hi - lo) * PX_W) + 'px">' + gut + "</div>";
+    }
+    // 時刻の目盛り列は固定し、日付見出しと時間割だけが横にスクロールする（収まるときはスクロールしない）
+    html = '<div class="wk"><div class="wk-gut">' + gut + '</div><div class="wk-scroll">' + html + "</div></div>";
+    if (undated.length) {
+      html += '<div class="wk-tbd">日時未定の☆ ' + undated.length + " 件: " + undated.map(function (s) {
+        return '<button type="button" class="mono" data-id="' + esc(s.sessionId) + '">' + esc(s.abbreviation || "—") + "</button>";
+      }).join("") + "</div>";
+    }
+    return html;
+  }
+  function timetableHtml(list) {
+    var items = layoutItems(list, PX);
+    var lo = Math.floor(items[0].sp.start / 60) * 60;
+    var hi = Math.ceil(Math.max.apply(null, items.map(function (it) { return it.vend; })) / 60) * 60;
+    // 会場移動の注意は、時刻順で連続する 2 件の間に置く
+    var moves = "";
+    for (var i = 0; i + 1 < items.length; i++) {
+      var mv = moveBetween(items[i].s, items[i + 1].s);
+      if (!mv) continue;
+      items[i].cls += " mv-before";
+      items[i + 1].cls += " mv-after";
+      var mid = (items[i].sp.end + items[i + 1].sp.start) / 2;
+      moves += '<div class="mv" style="top:' + ((mid - lo) * PX - 10).toFixed(1) + 'px">会場移動 ' + mv.gap + " 分（" + esc(mv.from) + " → " + esc(mv.to) + "）</div>";
+    }
+    var hours = "";
+    for (var h = lo; h <= hi; h += 60) hours += '<div class="hour" style="top:' + ((h - lo) * PX) + 'px"><span class="mono">' + hhmm(h) + "</span></div>";
+    var blocks = items.map(function (it) {
+      var ovl = list.some(function (o) { return o !== it.s && overlaps(it.s, o); });
+      var style = "top:" + ((it.sp.start - lo) * PX).toFixed(1) + "px;height:" + Math.max((it.sp.end - it.sp.start) * PX - 2, MIN_H).toFixed(1) + "px;" +
+        "left:" + (it.col * 100 / it.n).toFixed(3) + "%;width:calc(" + (100 / it.n).toFixed(3) + "% - 4px)";
+      return blockHtml(it.s, ovl, it.cls, style);
+    }).join("");
+    return '<div class="tt" style="height:' + ((hi - lo) * PX) + 'px">' + hours + blocks + moves + "</div>";
+  }
+
+  // 詳細シート。☆を外すと時間割からすぐ消える（シートは開いたままなので付け直せる）
+  var sheetEl = document.getElementById("sheet");
+  var scrimEl = document.getElementById("scrim");
+  var sheetId = null;
+  function openSheet(id) {
+    var s = BY_ID[id];
+    if (!s) return;
+    sheetId = id;
+    var fav = favs.has(id);
+    sheetEl.innerHTML = '<div class="shead">' +
+      '<button type="button" class="star" aria-label="お気に入り" aria-pressed="' + fav + '">' + (fav ? "★" : "☆") + "</button>" +
+      '<div class="stitle"><div class="title" lang="en">' + esc(s.title) + "</div>" +
+      '<div class="meta">' + metaHtml(s) + "</div></div>" +
+      '<button type="button" class="close" aria-label="閉じる">×</button></div>' + detailHtml(s).replace(" enter", "");
+    sheetEl.hidden = false;
+    scrimEl.hidden = false;
+    sheetEl.classList.remove("enter"); void sheetEl.offsetWidth; sheetEl.classList.add("enter");
+    sheetEl.scrollTop = 0;
+  }
+  function closeSheet() { sheetEl.hidden = true; scrimEl.hidden = true; sheetId = null; }
+  sheetEl.addEventListener("click", function (e) {
+    if (e.target.closest(".close")) { closeSheet(); return; }
+    var star = e.target.closest(".star");
+    if (!star || !sheetId) return;
+    if (favs.has(sheetId)) favs.delete(sheetId); else favs.add(sheetId);
+    saveFavs();
+    var on = favs.has(sheetId);
+    star.setAttribute("aria-pressed", on);
+    star.textContent = on ? "★" : "☆";
+    star.classList.remove("pop"); void star.offsetWidth; star.classList.add("pop");
+    renderDays();
+    renderTimetable(false);
+  });
+  scrimEl.addEventListener("click", closeSheet);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && sheetId) closeSheet(); });
+  daysEl.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-day]");
+    if (!b) return;
+    schedDay = b.getAttribute("data-day");
+    renderDays();
+    renderTimetable(true);
+  });
+  ttEl.addEventListener("click", function (e) {
+    var d = e.target.closest(".wk-head [data-day]");
+    if (d) { schedDay = d.getAttribute("data-day"); renderDays(); renderTimetable(true); return; } // 列見出しからその日のタブへ
+    var b = e.target.closest("[data-id]");
+    if (b) openSheet(b.getAttribute("data-id"));
+  });
+
+  // ---- 画面の切り替え（#list / #schedule）。描画は hashchange の一か所に集める ----
+  var view = null;
+  var viewBtns = document.querySelectorAll("[data-view]");
+  viewBtns.forEach(function (b) {
+    b.addEventListener("click", function () { location.hash = "#" + b.getAttribute("data-view"); });
+  });
+  function applyView() {
+    var next = location.hash === "#schedule" ? "schedule" : "list";
+    if (next === view) return;
+    var first = view === null;
+    view = next;
+    document.body.classList.toggle("is-schedule", view === "schedule");
+    viewBtns.forEach(function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-view") === view); });
+    if (view === "schedule") {
+      hideDock();
+      schedDay = pendingDay != null && DAYS.indexOf(pendingDay) >= 0 ? pendingDay : ALL;
+      pendingDay = null;
+      renderDays();
+      renderTimetable(!first);
+      window.scrollTo(0, 0);
+    } else {
+      closeSheet();
+      // 日程側で☆を外した分を一覧のカードにも反映する（初回は下の update で描画済み）
+      if (!first) update(false);
+    }
+  }
+  window.addEventListener("hashchange", applyView);
+
+  update(false);
+  applyView();
+})();
+</script>
+</body>
+</html>
